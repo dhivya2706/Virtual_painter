@@ -1,0 +1,18 @@
+class PainterLogic:
+    def __init__(self):
+        self.tip_ids = [4, 8, 12, 16, 20]
+
+    def fingers_up(self, lm_list):
+        fingers = []
+
+        if lm_list[self.tip_ids[0]][1] > lm_list[self.tip_ids[0] - 1][1]:
+            fingers.append(1)
+        else:
+            fingers.append(0)
+        for id in range(1, 5):
+            if lm_list[self.tip_ids[id]][2] < lm_list[self.tip_ids[id] - 2][2]:
+                fingers.append(1)
+            else:
+                fingers.append(0)
+
+        return fingers
