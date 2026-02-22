@@ -1,0 +1,124 @@
+import cv2
+import numpy as np
+from hand_tracking import HandTracker
+from painter_logic import PainterLogic
+import colors
+
+cap = cv2.VideoCapture(0)
+cap.set(3, 1280)
+cap.set(4, 720)
+
+tracker = HandTracker()
+logic = PainterLogic()
+
+xp, yp = 0, 0
+brush_color = colors.BLUE
+brush_thickness = colors.BRUSH_THICKNESS
+
+canvas = np.zeros((720, 1280, 3), np.uint8)
+
+smoothening = 7
+prev_x, prev_y = 0,0
+
+clear_cooldown = 0
+
+
+while True:
+    success, img = cap.read()
+    if not success:
+         break
+    img = cv2.flip(img, 1)
+
+    img = tracker.find_hands(img)
+    lm_list = tracker.get_landmarks(img)
+
+    if lm_list:
+        fingers = logic.fingers_up(lm_list)
+        x1, y1 = lm_list[8][1:]
+        x2, y2 = lm_list[12][1:]
+
+        if fingers.count(1) >= 4 and clear_cooldown == 0:
+            canvas = np.zeros((720, 1280, 3), np.uint8)
+            xp, yp = 0, 0
+            prev_x, prev_y = 0, 0
+            clear_cooldown = 20  # frames delay
+
+        if clear_cooldown > 0:
+            clear_cooldown -= 1
+
+        if fingers[1] and fingers[2] and clear_cooldown == 0:
+            xp, yp = 0, 0
+            prev_x, prev_y = x1,y1
+
+            if y1 < 100:
+                if 100 < x1 < 250:
+                    brush_color = colors.BLUE
+                elif 300 < x1 < 450:
+                    brush_color = colors.GREEN
+                elif 500 < x1 < 650:
+                    brush_color = colors.RED
+                elif 700 < x1 < 850:
+                    brush_color = colors.YELLOW
+                elif 900 < x1 < 1100:
+                    brush_color = colors.BLACK
+
+        elif fingers[1] and not fingers[2]:
+            if xp == 0 and yp == 0:
+                prev_x, prev_y = x1, y1
+                xp, yp = x1, y1
+
+            curr_x = prev_x + (x1 - prev_x)
+            curr_y = prev_y + (y1 - prev_y)
+
+            cv2.circle(img, (curr_x, curr_y), 10, brush_color, cv2.FILLED)
+
+            thickness = colors.ERASER_THICKNESS if brush_color == colors.BLACK else brush_thickness
+
+            cv2.line(canvas, (xp, yp), (curr_x, curr_y), brush_color, thickness)
+
+            xp, yp = curr_x, curr_y
+            prev_x, prev_y = curr_x, curr_y
+
+        else:
+            xp, yp = 0, 0
+
+    img_gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
+    _, img_inv = cv2.threshold(img_gray, 20, 255, cv2.THRESH_BINARY_INV)
+    img_inv = cv2.cvtColor(img_inv, cv2.COLOR_GRAY2BGR)
+
+    img = cv2.bitwise_and(img, img_inv)
+    img = cv2.add(img, canvas)
+
+    overlay = img.copy()
+    cv2.rectangle(overlay, (0, 0), (1280, 100), (40, 40, 40), -1)
+    img = cv2.addWeighted(overlay, 0.8, img, 0.2, 0)
+
+    buttons = [
+        (100, colors.BLUE, "Blue"),
+        (300, colors.GREEN, "Green"),
+        (500, colors.RED, "Red"),
+        (700, colors.YELLOW, "Yellow"),
+        (900, colors.BLACK, "Eraser")
+    ]
+
+    for x, color, text in buttons:
+        cv2.rectangle(img, (x, 20), (x+120, 80), color, cv2.FILLED)
+        if brush_color == color:
+            cv2.rectangle(img, (x, 20), (x+120, 80), (255, 255, 255), 3)
+
+        cv2.putText(img, text, (x+10, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    (255, 255, 255) if color != colors.YELLOW else (0,0,0), 2)
+
+    mode_text = "ERASER MODE" if brush_color == colors.BLACK else "DRAW MODE"
+    cv2.putText(img, mode_text, (1050, 50),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                (0, 0, 255), 2)
+
+    cv2.imshow("Virtual Painter PRO", img)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
